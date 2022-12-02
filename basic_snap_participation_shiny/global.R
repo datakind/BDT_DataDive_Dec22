@@ -23,7 +23,6 @@ census_api_key(read_file("census_api_key"))
 # Load Data ---------------------------------------------------------------
 
 working_dir <- getwd()
-information = read_file("Information.txt")
 
 data_dir <- file.path(working_dir, "data")
 df <- read_csv(file.path(data_dir, "snapmerge.csv")) %>% 
