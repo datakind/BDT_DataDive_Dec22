@@ -1,0 +1,78 @@
+---
+title: "DK DD 22 / BDT"
+output: html_notebook
+---
+
+
+```{r}
+library(survey)
+library(ipumsr)
+```
+
+
+
+```{r}
+# below copy pasted from IPUMS
+ddi <- read_ipums_ddi("usa_00004.xml")
+data <- read_ipums_micro(ddi)
+```
+
+
+```{r}
+KS <- subset(data, RELATE == 1 & STATEFIP == 22) # KS and Head of Household
+ipums_design <- svydesign(~CLUSTER, weights = ~HHWT, strata = ~STRATA, data = KS, nest = TRUE, check.strata = FALSE)
+
+```
+
+```{r}
+svymean(~HHINCOME, ipums_design, na.rm=TRUE)
+```
+
+
+```{r}
+KS$SPMSNAP <- ifelse(KS$SPMSNAP == 99999, NA, KS$SPMSNAP) 
+svytable(~round(HHINCOME, -4) + round(SPMSNAP, -3), ipums_design)[1:15, 1:10]
+```
+## Test model
+
+```{r}
+m <- svyglm( I(SPMSNAP > 0) ~ I(HHINCOME/1000), design=ipums_design, subset = HHINCOME <= 25e3 )
+```
+
+## More complete:
+
+```{r}
+m2 <- svyglm( 
+  I(SPMSNAP > 0) ~ I(HHINCOME/1000) + I(SEX==2) + I(AGE/10) + KITCHEN + I(OWNERSHPD == 22) +
+    I(AGE >= 63) + # Social Security Age
+    NCHILD +    NCHLT5 +
+    I(CINETHH == 3) + # no internet
+    I(MARST == 6) + #never marriend
+    I(RACE != 1) + I(HISPAN != 0) + I(CITIZEN >= 3) + 
+    I(SPEAKENG == 1) + # Does Not speak english
+    I(HCOVANY == 1) + # No Health Insurance
+    I(HINSCAID == 2) + I(HINSCARE == 2) + # Medicaid
+    I(SCHOOL == 2 & GRADEATT >= 7) + #active college student
+    I(EMPSTATD == 20) + #Unemployed +
+    I(UHRSWORK / 40) + 
+    I(VETSTAT == 2) + 
+    I(TRANWORK == 10)  + # commute by own car
+    I(SPMWIC / 1000) + 
+    I(SPMEITC / 1000) + 
+    I(SPMLUNCH / 1000)
+  , 
+  design=ipums_design, subset = HHINCOME <= 25e3 )
+
+summary(m2)
+```
+
+## SNAP vs School Lunch
+
+```{r}
+svytable(~round(SPMSNAP, -3)+round(SPMLUNCH, -3), ipums_design)
+```
+## SNAP vs WIC
+
+```{r}
+svytable(~round(SPMSNAP, -3)+round(SPMWIC, -3), ipums_design)
+```
