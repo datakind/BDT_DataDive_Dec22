@@ -1,2 +1,4 @@
 # SNAP Biannual Participation and Issuance
-WIth derived columns, nerged with FIPS reference
+Aggregated to annual,
+With derived columns, 
+merged with FIPS reference
