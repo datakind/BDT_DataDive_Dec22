@@ -1,6 +1,8 @@
 ---
 title: "DK DD 22 / BDT"
-output: html_notebook
+output:
+  pdf_document: default
+  html_notebook: default
 ---
 
 
@@ -8,6 +10,10 @@ output: html_notebook
 library(survey)
 library(ipumsr)
 ```
+
+* ACS 2016 1% sample
+* Looking at KS Head of Household only for now
+* IPUMS is embargoed data but sharing results and code should be fine
 
 
 
@@ -17,12 +23,17 @@ ddi <- read_ipums_ddi("usa_00004.xml")
 data <- read_ipums_micro(ddi)
 ```
 
+```{r}
+HOH <- subset(data, RELATE == 1) # KS and Head of Household
+```
 
 ```{r}
 KS <- subset(data, RELATE == 1 & STATEFIP == 22) # KS and Head of Household
 ipums_design <- svydesign(~CLUSTER, weights = ~HHWT, strata = ~STRATA, data = KS, nest = TRUE, check.strata = FALSE)
 
 ```
+
+Average HH income in KS
 
 ```{r}
 svymean(~HHINCOME, ipums_design, na.rm=TRUE)
@@ -61,7 +72,9 @@ m2 <- svyglm(
     I(SPMEITC / 1000) + 
     I(SPMLUNCH / 1000)
   , 
-  design=ipums_design, subset = HHINCOME <= 25e3 )
+  design=ipums_design, subset = HHINCOME <= 25e3, family=binomial() )
+
+ options(scipen=2, digits=6)
 
 summary(m2)
 ```
@@ -76,3 +89,38 @@ svytable(~round(SPMSNAP, -3)+round(SPMLUNCH, -3), ipums_design)
 ```{r}
 svytable(~round(SPMSNAP, -3)+round(SPMWIC, -3), ipums_design)
 ```
+
+```{r}
+HOH$snap_actual <- HOH$SPMSNAP > 0
+HOH$snap_predict <- predict(m2, newdata=HOH, type="response")
+HOH$low_income <- HOH$HHINCOME <= 25e3
+hoh_design <- svydesign(~CLUSTER, weights = ~HHWT, strata = ~STRATA, data = HOH, nest = TRUE, check.strata = FALSE)
+
+
+```
+
+
+```{r}
+system.time(
+  res2 <- svyby(~snap_actual + snap_predict, ~snap_actual+STATEFIP, subset(hoh_design, HHINCOME <= 25e3), svytotal)
+)
+```
+
+
+```{r}
+require(USCensus2020state)
+require(dplyr)
+require(sf)
+
+states_joined <- filter(res2, snap_actual) %>% 
+  mutate(take_rt=snap_predict / snap_actualTRUE) %>% 
+  mutate(GEOID20=sprintf("%02d", STATEFIP)) %>% 
+  inner_join(x=states20) # NB put sf on left to retain classing correctly
+
+```
+
+
+```{r}
+plot(states_joined[,"take_rt"], xlim=c(-100, -70))
+```
+
