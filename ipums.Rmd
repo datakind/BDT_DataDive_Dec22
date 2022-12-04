@@ -123,4 +123,13 @@ states_joined <- filter(res2, snap_actual) %>%
 ```{r}
 plot(states_joined[,"take_rt"], xlim=c(-100, -70))
 ```
+```{r}
+knitr::kable(xtable::xtable(m2))
+```
 
+## Effect of density on take
+
+```{r}
+summary(update(m2, .~.+poly(log10(DENSITY),3, raw=TRUE)))
+curve(2.17*log10(x) + -1.039*log10(x)^2+.13*log10(x)^3, from = min(HOH$DENSITY), to=max(HOH$DENSITY))
+```
