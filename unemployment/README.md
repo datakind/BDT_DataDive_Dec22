@@ -3,7 +3,8 @@ In this folder, I created a Tableau heatmap to show the gap between total umempl
 The data source used is https://data.census.gov/table?q=S2201&tid=ACSST5Y2020.S2201
 The original data was cleaned by using python pandas and the counties with no data was droped.
 ## The final heat map in Tableau is https://public.tableau.com/app/profile/selina.su/viz/BDT_unploymentandSNAP/GapbetweenUnemploymnetandSNAPuptake?publish=yes
-![gap map](https://user-images.githubusercontent.com/105521221/205455774-32c4473a-fac2-448e-8c3c-773f307224ad.png)
+![heat map](https://user-images.githubusercontent.com/105521221/205509198-16f27c1c-c591-4a56-8797-a758c27ef603.png)
+
 * SNAP Receiving % among Total unemployment families:17.48%
 * GAP % Between Total and SNAP Receiving unemployment families: 82.52%
 
