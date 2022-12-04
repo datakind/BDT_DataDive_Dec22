@@ -1,0 +1,303 @@
+---
+title: "Visualizations"
+format: html
+editor: visual
+theme: sandstone
+page-layout: full
+---
+
+```{r}
+#| include = FALSE
+
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+
+library(ggplot2)
+library(jtools)
+library(psych)
+library(dplyr)
+library(tidyr)
+library(DT)
+
+load("output.RData")
+
+theme_set(theme_minimal())
+theme_update(text = element_text(family = "serif"))
+theme_update(plot.title = element_text(hjust = 0.5))
+```
+
+
+## Purpose
+
+The purpose of this analysis is to create a basic multivariate linear regression model to predict expected SNAP enrollment. Theoretically, these predictions can then be compared to actual enrollment to identify areas of over- or under-enrollment. That is, the "gap" in enrollment can be defined as `predicted enrollment - actual enrollment`. If the gap is positive, this indicates under-enrollment. If the gap is negative, this indicates over-enrollment.
+
+## Data Sources
+
+The following data sources were collected at the **county** level for **2020**.
+
+-   [SNAP Enrollment](https://github.com/michaelbbryan/tools-and-kaggles/tree/main/DataDive2022)
+
+-   [Local Area Unemployment Statistics (BLS)](https://www.bls.gov/lau/tables.htm)
+
+-   [Small Area Income and Poverty Estimates (SAIPE)](https://www.census.gov/programs-surveys/saipe.html)
+
+-   Decennial Census and ACS Data (relevant variable codes in `analysis.R`)
+
+## Data Summary
+
+```{r}
+tab = merged %>% 
+  select(enrolled_hh_rate, enrolled_persons_rate, log_income, ue_rate_pct, pct_uninsured,
+         poverty_percent_all_ages, avg_hh_size) %>% 
+  psych::describe() %>% 
+  mutate(across(where(is.numeric), round, 2)) %>% 
+  select(-c(vars, n, trimmed, mad, range, skew, kurtosis, se)) 
+
+rownames(tab) = c("HH SNAP %", "Persons SNAP %", "log(Median HH Income)", "Unemployment (%)", "Uninsured (%)", "Poverty (%)", "Avg. HH Size")
+colnames(tab) = c("Mean", "Standard Deviation", "Median", "Min", "Max")
+
+datatable(tab, options = list(autoWidth = TRUE, searching = FALSE))
+```
+
+## Model Summary
+
+I created two models. Model 1 uses household SNAP enrollment as a percentage of total number of households per county. Model 2 uses individual SNAP enrollment as a percentage of total population per county.
+
+**Model 1**
+
+$HH SNAP(\%) = \beta_1 log(Median HH Income) + \beta_2 Unemployment Rate(\%) + \beta_3 Uninsured (\%),  \beta_4 Poverty (\%), \beta_5 Avg. HH Size$
+
+**Model 2**
+
+$Persons SNAP(\%) = \beta_1 log(Median HH Income) + \beta_2 Unemployment Rate(\%) + \beta_3 Uninsured (\%),  \beta_4 Poverty (\%), \beta_5 Avg. HH Size$
+
+## Model Results
+
+```{r}
+jtools::export_summs(
+  model1, model2,
+  model.names = c("Model 1 (HH SNAP %)", "Model 2 (Persons SNAP %)"),
+  coefs = c("log(Median HH Income)" = "log_income",
+            "Unemployment Rate (%)" = "ue_rate_pct",
+            "Uninsured (%)" = "pct_uninsured",
+            "Poverty (%)" = "poverty_percent_all_ages",
+            "Avg. HH Size" = "avg_hh_size")
+)
+```
+
+## Predictions
+
+::: panel-tabset
+
+### Model 1
+
+**Model 1 Predictions vs. Observed**
+```{r}
+ggplot(model1_predictions, aes(x = enrolled_hh_rate, y = pred)) +
+  geom_point(alpha = 0.5, color = "darkblue") +
+  labs(x = "Actual County HH SNAP Enrollment %",
+       y = "Predicted Enrollment %") +
+  scale_x_continuous(labels = scales::label_percent(scale = 1)) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1))
+```
+
+**Model 1 Distribution of Predicted Enrollment Gaps**
+```{r}
+ggplot(model1_predictions, aes(x = predicted_gap)) +
+  geom_histogram(bins = 30, alpha = 0.7, fill = "blue") +
+  geom_vline(xintercept = 0, linetype = "dashed", lwd = 1) +
+  scale_x_continuous(labels = scales::label_percent(scale = 1)) +
+  labs(x = "Predicted Gap in Enrollment (%)",
+       y = "# of Counties")
+```
+
+**Model 1 Top 10 Counties by Under-Enrollment Gap**
+```{r}
+# Data Prep
+model1_predictions %>% 
+  arrange(desc(predicted_gap)) %>% 
+  slice(1:10) %>% 
+  rename("Observed" = "enrolled_hh_rate", "Predicted" = "pred") %>% 
+  select(county_fips, Observed, Predicted, predicted_gap) %>% 
+  pivot_longer(cols = c(Observed, Predicted), names_to = "obs_or_pred", values_to = "estimate") %>% 
+  # Plot
+  ggplot(aes(y = reorder(county_fips, predicted_gap), x = estimate, fill = obs_or_pred)) +
+    geom_col(position = "dodge2") +
+    scale_fill_manual(values = c("#006175", "#E3B505")) +
+    scale_x_continuous(labels = scales::label_percent(scale = 1)) +
+    labs(x = "Enrollment (%)",
+         y = "County FIPS",
+         fill = "Enrollment")
+  
+```
+
+```{r}
+underenrolled_fips_model1 = model1_predictions %>% 
+  arrange(desc(predicted_gap)) %>% 
+  slice(1:10) %>% 
+  select(county_fips)
+
+colnames_1 = c("County Fips", "State", "County", "# Households", "Median HH Income", "Unemployment (%)",
+               "Uninsured (%)", "Poverty (%)", "Avg. HH Size")
+
+table1 = merged %>% 
+  filter(county_fips %in% underenrolled_fips_model1$county_fips) %>% 
+  select(county_fips, state_name, county_name, total_households, median_household_income, 
+         ue_rate_pct, pct_uninsured, poverty_percent_all_ages, avg_hh_size)
+
+colnames(table1) = colnames_1
+
+datatable(table1, options = list(pageLength = 10, autoWidth = TRUE, searching = FALSE))
+```
+
+
+**Model 1 Top 10 Counties by Over-Enrollment Gap**
+```{r}
+# Data Prep
+model1_predictions %>% 
+  arrange(predicted_gap) %>% 
+  slice(1:10) %>% 
+  rename("Observed" = "enrolled_hh_rate", "Predicted" = "pred") %>% 
+  select(county_fips, Observed, Predicted, predicted_gap) %>% 
+  pivot_longer(cols = c(Observed, Predicted), names_to = "obs_or_pred", values_to = "estimate") %>% 
+  # Plot
+  ggplot(aes(y = reorder(county_fips, predicted_gap), x = estimate, fill = obs_or_pred)) +
+    geom_col(position = "dodge2") +
+    scale_fill_manual(values = c("#006175", "#E3B505")) +
+    scale_x_continuous(labels = scales::label_percent(scale = 1)) +
+    labs(x = "Enrollment (%)",
+         y = "County FIPS",
+         fill = "Enrollment")
+```
+
+```{r}
+overenrolled_fips_model1 = model1_predictions %>% 
+  arrange(predicted_gap) %>% 
+  slice(1:10) %>% 
+  select(county_fips)
+
+colnames_2 = c("County Fips", "State", "County", "# Households", "Median HH Income", "Unemployment (%)",
+               "Uninsured (%)", "Poverty (%)", "Avg. HH Size")
+
+table2 = merged %>% 
+  filter(county_fips %in% overenrolled_fips_model1$county_fips) %>% 
+  select(county_fips, state_name, county_name, total_households, median_household_income, 
+         ue_rate_pct, pct_uninsured, poverty_percent_all_ages, avg_hh_size)
+
+colnames(table2) = colnames_2
+
+datatable(table2, options = list(pageLength = 10, autoWidth = TRUE, searching = FALSE))
+```
+
+### Model 2
+
+**Model 2 Predictions vs. Observed**
+```{r}
+ggplot(model2_predictions, aes(x = enrolled_persons_rate, y = pred)) +
+  geom_point(alpha = 0.5, color = "darkred") +
+  labs(x = "Actual County Persons SNAP Enrollment %",
+       y = "Predicted Enrollment %") +
+  scale_x_continuous(labels = scales::label_percent(scale = 1)) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1))
+```
+
+**Model 2 Distribution of Predicted Enrollment Gaps**
+```{r}
+ggplot(model2_predictions, aes(x = predicted_gap)) +
+  geom_histogram(bins = 30, alpha = 0.7, fill = "red") +
+  geom_vline(xintercept = 0, linetype = "dashed", lwd = 1) +
+  scale_x_continuous(labels = scales::label_percent(scale = 1)) +
+  labs(x = "Predicted Gap in Enrollment (%)",
+       y = "# of Counties")
+```
+
+**Model 2 Top 10 Counties by Under-Enrollment Gap**
+```{r}
+# Data Prep
+model2_predictions %>% 
+  arrange(desc(predicted_gap)) %>% 
+  slice(1:10) %>% 
+  rename("Observed" = "enrolled_persons_rate", "Predicted" = "pred") %>% 
+  select(county_fips, Observed, Predicted, predicted_gap) %>% 
+  pivot_longer(cols = c(Observed, Predicted), names_to = "obs_or_pred", values_to = "estimate") %>% 
+  # Plot
+  ggplot(aes(y = reorder(county_fips, predicted_gap), x = estimate, fill = obs_or_pred)) +
+    geom_col(position = "dodge2") +
+    scale_fill_manual(values = c("#006175", "#E3B505")) +
+    scale_x_continuous(labels = scales::label_percent(scale = 1)) +
+    labs(x = "Enrollment (%)",
+         y = "County FIPS",
+         fill = "Enrollment")
+  
+```
+```{r}
+underenrolled_fips_model2 = model2_predictions %>% 
+  arrange(desc(predicted_gap)) %>% 
+  slice(1:10) %>% 
+  select(county_fips)
+
+colnames_3 = c("County Fips", "State", "County", "Population", "Median HH Income", "Unemployment (%)",
+               "Uninsured (%)", "Poverty (%)", "Avg. HH Size")
+
+table3 = merged %>% 
+  filter(county_fips %in% underenrolled_fips_model2$county_fips) %>% 
+  select(county_fips, state_name, county_name, population_2020, median_household_income, 
+         ue_rate_pct, pct_uninsured, poverty_percent_all_ages, avg_hh_size)
+
+colnames(table3) = colnames_3
+
+datatable(table3, options = list(pageLength = 10, autoWidth = TRUE, searching = FALSE))
+```
+
+**Model 2 Top 10 Counties by Over-Enrollment Gap**
+```{r}
+# Data Prep
+model2_predictions %>% 
+  arrange(predicted_gap) %>% 
+  slice(1:10) %>% 
+  rename("Observed" = "enrolled_persons_rate", "Predicted" = "pred") %>% 
+  select(county_fips, Observed, Predicted, predicted_gap) %>% 
+  pivot_longer(cols = c(Observed, Predicted), names_to = "obs_or_pred", values_to = "estimate") %>% 
+  # Plot
+  ggplot(aes(y = reorder(county_fips, predicted_gap), x = estimate, fill = obs_or_pred)) +
+    geom_col(position = "dodge2") +
+    scale_fill_manual(values = c("#006175", "#E3B505")) +
+    scale_x_continuous(labels = scales::label_percent(scale = 1)) +
+    labs(x = "Enrollment (%)",
+         y = "County FIPS",
+         fill = "Enrollment")
+```
+
+```{r}
+overenrolled_fips_model2 = model2_predictions %>% 
+  arrange(predicted_gap) %>% 
+  slice(1:10) %>% 
+  select(county_fips)
+
+colnames_4 = c("County Fips", "State", "County", "Population", "Median HH Income", "Unemployment (%)",
+               "Uninsured (%)", "Poverty (%)", "Avg. HH Size")
+
+table4 = merged %>% 
+  filter(county_fips %in% overenrolled_fips_model2$county_fips) %>% 
+  select(county_fips, state_name, county_name, population_2020, median_household_income, 
+         ue_rate_pct, pct_uninsured, poverty_percent_all_ages, avg_hh_size)
+
+colnames(table4) = colnames_4
+
+datatable(table4, options = list(pageLength = 10, autoWidth = TRUE, searching = FALSE))
+```
+
+:::
+
+## Future Additions
+
+1. Add initial data visualization/summary
+
+2. Add plots confirming OLS assumptions are met
+
+3. Look into further confounding variables not included in the models
+
+4. Retrieve SNAP, BLS, and SAIPE data from a more reproducible location (i.e. API)
+
+5. Add confidence intervals to prediction plots
+
+6. Research further patterns in counties with largest gaps.
